@@ -1,6 +1,6 @@
 import time
 
-from utils import *
+from .utils import *
 
 xrange = range
 
@@ -18,10 +18,11 @@ def dncnn(input, is_training=True, output_channels=1):
 
 
 class denoiser(object):
-    def __init__(self, sess, input_c_dim=1, sigma=25, batch_size=128):
+    def __init__(self, sess, input_c_dim=1, sigma=25, batch_size=128, quality=20):
         self.sess = sess
         self.input_c_dim = input_c_dim
         self.sigma = sigma
+        self._quality = quality
         # build model
         self.Y_ = tf.placeholder(tf.float32, [None, None, None, self.input_c_dim], name='clean_image')
         self.X = tf.placeholder(tf.float32, [None, None, None, self.input_c_dim], name = 'noisy_image')
@@ -41,6 +42,9 @@ class denoiser(object):
         self.sess.run(init)
         print("[*] Initialize model successfully...")
 
+    def quality(self):
+        return self._quality
+
     def evaluate(self, iter_num, test_data, sample_dir, summary_merged, summary_writer):
         # assert test_data value range is 0-255
         print("[*] Evaluating...")
@@ -54,8 +58,8 @@ class denoiser(object):
             noisy_image = np.squeeze(noisy_image, 0)
             noisy_image = np.squeeze(noisy_image, 2)
             noisy_image = Image.fromarray(noisy_image)
-            noisy_image.save('./asdf/tmp2.jpg', quality=10)
-            noisy_image = Image.open('./asdf/tmp2.jpg')
+            noisy_image.save('./tmp2.jpg', quality=self.quality())
+            noisy_image = Image.open('./tmp2.jpg')
             noisy_image = np.array(noisy_image)
             noisy_image = noisy_image.astype(np.float32) / 255.0
             noisy_image = noisy_image.reshape(1, noisy_image_h, noisy_image_w, 1)
@@ -121,7 +125,7 @@ class denoiser(object):
                     tmp_array = tmp_array * 255.0
                     tmp_array = tmp_array.astype(np.uint8)
                     tmp_image = Image.fromarray(tmp_array)
-                    tmp_image.save('./tmp_jpeg/tmp.jpg', quality=10)
+                    tmp_image.save('./tmp_jpeg/tmp.jpg', quality=self.quality())
                     jpg_quality40 = Image.open('./tmp_jpeg/tmp.jpg')
                     jpg_quality40_array = np.array(jpg_quality40)
                     jpg_quality40_array = jpg_quality40_array.astype(np.float32) / 255.0
@@ -164,14 +168,17 @@ class denoiser(object):
         else:
             return False, 0
 
-    def test(self, test_files, ckpt_dir, save_dir):
-        """Test DnCNN"""
-        # init variables
-        tf.initialize_all_variables().run()
-        assert len(test_files) != 0, 'No testing data!'
+    def load_model(self, ckpt_dir):
+        tf.initialize_all_variables().run(session=self.sess)
         load_model_status, global_step = self.load(ckpt_dir)
         assert load_model_status == True, '[!] Load weights FAILED...'
         print(" [*] Load weights SUCCESS...")
+
+
+    def test(self, test_files, ckpt_dir, save_dir):
+        """Test DnCNN"""
+        # init variables
+        self.load_model(ckpt_dir)
         psnr_sum = 0
         print("[*] " + 'noise level: ' + str(self.sigma) + " start testing...")
         for idx in xrange(len(test_files)):
@@ -183,8 +190,8 @@ class denoiser(object):
             noisy_image = np.squeeze(noisy_image, 0)
             noisy_image = np.squeeze(noisy_image, 2)
             noisy_image = Image.fromarray(noisy_image)
-            noisy_image.save('./asdf/tmp2.jpg', quality=10)
-            noisy_image = Image.open('./asdf/tmp2.jpg')
+            noisy_image.save('./tmp2.jpg', quality=self.quality())
+            noisy_image = Image.open('./tmp2.jpg')
             noisy_image = np.array(noisy_image)
             noisy_image = noisy_image.astype(np.float32) / 255.0
             noisy_image = noisy_image.reshape(1, noisy_image_h, noisy_image_w, 1)
@@ -202,3 +209,73 @@ class denoiser(object):
             save_images(os.path.join(save_dir, 'denoised%d.png' % idx), outputimage)
         avg_psnr = psnr_sum / len(test_files)
         print("--- Average PSNR %.2f ---" % avg_psnr)
+
+    def run(self, test_files, ckpt_dir, save_dir):
+        """Test DnCNN"""
+        assert len(test_files) != 0, 'No testing data!'
+        self.load_model(ckpt_dir)
+        psnr_sum = 0
+        print("[*] " + 'noise level: ' + str(self.sigma) + " start testing...")
+        print("test files {}".format(test_files));
+        for idx in xrange(len(test_files)):
+            clean_image = load_images(test_files[idx]).astype(np.float32) / 255.0
+
+            noisy_image = np.copy(load_images(test_files[idx])).astype(np.float32) / 255.0
+            # noisy_image_h = np.size(noisy_image, 1)
+            # noisy_image_w = np.size(noisy_image, 2)
+            # noisy_image = np.squeeze(noisy_image, 0)
+            # noisy_image = np.squeeze(noisy_image, 2)
+            # noisy_image = Image.fromarray(noisy_image)
+            # noisy_image.save('./tmp2.jpg', quality=self.quality())
+            # noisy_image = Image.open('./tmp2.jpg')
+            # noisy_image = np.array(noisy_image)
+            # noisy_image = noisy_image.astype(np.float32) / 255.0
+            # noisy_image = noisy_image.reshape(1, noisy_image_h, noisy_image_w, 1)
+
+            output_clean_image, noisy_image = self.sess.run([self.Y, self.X],
+                                                            feed_dict={self.Y_: clean_image, self.X: noisy_image, self.is_training: False})
+            groundtruth = np.clip(255 * clean_image, 0, 255).astype('uint8')
+            noisyimage = np.clip(255 * noisy_image, 0, 255).astype('uint8')
+            outputimage = np.clip(255 * output_clean_image, 0, 255).astype('uint8')
+            # calculate PSNR
+            psnr = cal_psnr(groundtruth, outputimage)
+            print("img%d PSNR: %.2f" % (idx, psnr))
+            psnr_sum += psnr
+            save_images(os.path.join(save_dir, 'noisy%d.png' % idx), noisyimage)
+            save_images(os.path.join(save_dir, 'denoised%d.png' % idx), outputimage)
+        avg_psnr = psnr_sum / len(test_files)
+        print("--- Average PSNR %.2f ---" % avg_psnr)
+
+    # must load model first
+    def process_RGB(self, img):
+        noisy_images = map(lambda x: np.array(x).reshape(1, x.size[1], x.size[0], 1), img.split())
+        noisy_images = list(map(lambda x: np.copy(x).astype(np.float32) / 255.0, noisy_images))
+
+        clean_images = []
+        for image in noisy_images:
+            output_clean_image, noisy_image = self.sess.run([self.Y, self.X],
+                                                            feed_dict={self.Y_: image, self.X: image, self.is_training: False})
+            clean_images.append(np.clip(255 * output_clean_image, 0, 255).astype('uint8'))
+
+        return reconstruct_RGB_image(clean_images)
+
+    def run_RGB(self, test_files, ckpt_dir, save_dir):
+        """Test DnCNN"""
+        # init variables
+        self.load_model(ckpt_dir)
+        print("test files {}".format(test_files));
+
+        total = len(test_files)
+        start_time = time.time()
+
+        for idx in xrange(len(test_files)):
+            print("{} of {} ({}%)".format(idx, len(test_files), idx * 100 // len(test_files)))
+
+            current_time = time.time()
+            estimate_minutes = ((current_time - start_time) / (idx+1) * (total - (idx+1))) // 60
+            estimate_seconds = ((current_time - start_time) / (idx+1) * (total - (idx+1))) % 60 // 1
+            print("{} of {} ({}%, est: {}:{})".format(idx, total, (idx * 100 // total), estimate_minutes, estimate_seconds))
+
+            img = Image.open(test_files[idx])
+            clean_image = self.process_RGB(img)
+            clean_image.save(os.path.join(save_dir, 'denoised_rgb%04d.png' % idx))

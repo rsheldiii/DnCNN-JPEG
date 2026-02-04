@@ -3,8 +3,10 @@ from glob import glob
 
 import tensorflow as tf
 
-from model import denoiser
-from utils import *
+from dncnn_jpeg.model import denoiser
+from dncnn_jpeg.utils import *
+
+from natsort import natsorted
 
 #import os
 #os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152#
@@ -16,10 +18,11 @@ parser.add_argument('--batch_size', dest='batch_size', type=int, default=128, he
 parser.add_argument('--lr', dest='lr', type=float, default=0.001, help='initial learning rate for adam')
 parser.add_argument('--use_gpu', dest='use_gpu', type=int, default=1, help='gpu flag, 1 for GPU and 0 for CPU')
 parser.add_argument('--sigma', dest='sigma', type=int, default=25, help='noise level')
-parser.add_argument('--phase', dest='phase', default='train', help='train or test')
+parser.add_argument('--quality', dest='quality', type=int, default=20, help='JPEG quality factor (1-100)')
+parser.add_argument('--phase', dest='phase', default='run_RGB', help='train or test')
 parser.add_argument('--checkpoint_dir', dest='ckpt_dir', default='./checkpoint', help='models are saved here')
 parser.add_argument('--sample_dir', dest='sample_dir', default='./sample', help='sample are saved here')
-parser.add_argument('--test_dir', dest='test_dir', default='./test', help='test sample are saved here')
+parser.add_argument('--test_dir', dest='test_dir', default='./out', help='test sample are saved here')
 parser.add_argument('--eval_set', dest='eval_set', default='Set12', help='dataset for eval in training')
 parser.add_argument('--test_set', dest='test_set', default='BSD68', help='dataset for testing')
 args = parser.parse_args()
@@ -39,6 +42,14 @@ def denoiser_test(denoiser):
     test_files = glob('./data/test/Set12/*.png'.format(args.test_set))
     denoiser.test(test_files, ckpt_dir=args.ckpt_dir, save_dir=args.test_dir)
 
+def denoiser_run(denoiser):
+    test_files = natsorted(glob('./in/*.png'.format(args.test_set)))
+    denoiser.run(test_files, ckpt_dir=args.ckpt_dir, save_dir=args.test_dir)
+
+def denoiser_run_RGB(denoiser):
+    test_files = natsorted(glob('./in/*.png'.format(args.test_set)))
+    denoiser.run_RGB(test_files, ckpt_dir=args.ckpt_dir, save_dir=args.test_dir)
+
 
 def main(_):
     if not os.path.exists(args.ckpt_dir):
@@ -55,24 +66,30 @@ def main(_):
     if args.use_gpu:
         # added to control the gpu memory
         print("GPU\n")
-        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
+        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.8)
         with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
-            model = denoiser(sess, sigma=args.sigma)
+            model = denoiser(sess, quality=args.quality)
             if args.phase == 'train':
                 denoiser_train(model, lr=lr)
             elif args.phase == 'test':
                 denoiser_test(model)
+            elif args.phase == 'run':
+                denoiser_run(model)
+            elif args.phase == 'run_RGB':
+                denoiser_run_RGB(model)
             else:
                 print('[!]Unknown phase')
                 exit(0)
     else:
         print("CPU\n")
         with tf.Session() as sess:
-            model = denoiser(sess, sigma=args.sigma)
+            model = denoiser(sess, sigma=args.sigma, quality=args.quality)
             if args.phase == 'train':
                 denoiser_train(model, lr=lr)
             elif args.phase == 'test':
                 denoiser_test(model)
+            elif args.phase == 'run':
+                denoiser_run(model)
             else:
                 print('[!]Unknown phase')
                 exit(0)

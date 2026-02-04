@@ -3,7 +3,7 @@ import glob
 from PIL import Image
 import PIL
 import random
-from utils import *
+from dncnn_jpeg.utils import *
 
 # the pixel value range is '0-255'(uint8 ) of training data
 
@@ -33,9 +33,9 @@ def generate_patches(isDebug=False):
     if isDebug:
         filepaths = filepaths[:10]
     print("number of training data %d" % len(filepaths))
-    
+
     scales = [1, 0.9, 0.8, 0.7]
-    
+
     # calculate the number of patches
     for i in xrange(len(filepaths)):
         img = Image.open(filepaths[i]).convert('L')  # convert RGB to gray
@@ -47,7 +47,7 @@ def generate_patches(isDebug=False):
                 for y in range(0 + args.step, (im_w - args.pat_size), args.stride):
                     count += 1
     origin_patch_num = count * DATA_AUG_TIMES
-    
+
     if origin_patch_num % args.bat_size != 0:
         numPatches = (origin_patch_num / args.bat_size + 1) * args.bat_size
     else:
@@ -55,10 +55,10 @@ def generate_patches(isDebug=False):
     print("total patches = %d , batch size = %d, total batches = %d" % \
           (numPatches, args.bat_size, numPatches / args.bat_size))
     numPatches = int(numPatches)
-    
+
     # data matrix 4-D
     inputs = np.zeros((numPatches, args.pat_size, args.pat_size, 1), dtype="uint8")
-    
+
     count = 0
     # generate patches
     for i in xrange(len(filepaths)):
@@ -69,7 +69,7 @@ def generate_patches(isDebug=False):
             img_s = img.resize(newsize, resample=PIL.Image.BICUBIC)
             img_s = np.reshape(np.array(img_s, dtype="uint8"),
                                (img_s.size[0], img_s.size[1], 1))  # extend one dimension
-            
+
             for j in xrange(DATA_AUG_TIMES):
                 im_h, im_w, _ = img_s.shape
                 for x in range(0 + args.step, im_h - args.pat_size, args.stride):
@@ -81,7 +81,7 @@ def generate_patches(isDebug=False):
     if count < numPatches:
         to_pad = numPatches - count
         inputs[-to_pad:, :, :, :] = inputs[:to_pad, :, :, :]
-    
+
     if not os.path.exists(args.save_dir):
         os.mkdir(args.save_dir)
     np.save(os.path.join(args.save_dir, "img_clean_pats"), inputs)

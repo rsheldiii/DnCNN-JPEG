@@ -73,6 +73,21 @@ def load_images(filelist):
         data.append(np.array(im).reshape(1, im.size[1], im.size[0], 1))
     return data
 
+def load_image_rgb(path):
+    print("path: {}".format(path))
+    images = Image.open(path).split()
+    return map(lambda x: np.array(x).reshape(1, x.size[1], x.size[0], 1), images)
+
+def load_images_rgb(filelist):
+    print(filelist.__class__)
+    # pixel value range 0-255
+    if not isinstance(filelist, list):
+        print("is not instance of list: {} {}".format(filelist, filelist.__class__))
+        return load_image_rgb(filelist)
+    else:
+        print("is instance of list: {} {}".format(filelist, filelist.__class__))
+        return map(lambda x: load_image_rgb(x), filelist)
+
 
 def save_images(filepath, ground_truth, noisy_image=None, clean_image=None):
     # assert the pixel value range is 0-255
@@ -85,6 +100,26 @@ def save_images(filepath, ground_truth, noisy_image=None, clean_image=None):
         cat_image = np.concatenate([ground_truth, noisy_image, clean_image], axis=1)
     im = Image.fromarray(cat_image.astype('uint8')).convert('L')
     im.save(filepath, 'png')
+
+def reconstruct_RGB_image(images):
+    r = np.squeeze(images[0])
+    g = np.squeeze(images[1])
+    b = np.squeeze(images[2])
+
+    rgbArray = np.zeros((r.shape[0],r.shape[1],3), 'uint8')
+    rgbArray[..., 0] = r
+    rgbArray[..., 1] = g
+    rgbArray[..., 2] = b
+
+    return Image.fromarray(rgbArray)
+
+
+def save_images_RGB(filepath, images):
+    img = reconstruct_RGB_image(images)
+    img.save(filepath, 'png')
+
+    # im = Image.fromarray(np.asarray(list(images))).convert('sRGB')
+    # im.save(filepath, 'png')
 
 
 def cal_psnr(im1, im2):
